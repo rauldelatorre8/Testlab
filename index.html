@@ -1,0 +1,266 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TestLab - Mis exámenes</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f6fb;color:#20263a;font-family:Arial,sans-serif}
+header{background:#fff;padding:18px 6%;border-bottom:1px solid #e5e8f0}
+.logo{font-size:23px;font-weight:bold;color:#5959df}
+main{max-width:950px;margin:35px auto;padding:0 18px}
+h1{font-size:30px;margin-bottom:5px}
+.sub{color:#788196}
+.card{background:white;padding:22px;border-radius:16px;margin:18px 0;box-shadow:0 5px 20px #18264a0c}
+button{border:0;border-radius:9px;padding:12px 17px;font-weight:bold;cursor:pointer;margin:4px}
+.primary{background:#5959df;color:white}
+.secondary{background:#ededff;color:#5959df}
+.danger{background:#fff0f0;color:#c33}
+input,textarea{width:100%;padding:12px;border:1px solid #dce1eb;border-radius:9px;margin:6px 0 13px;font:inherit}
+textarea{min-height:85px}
+.hidden{display:none!important}
+.exam{border:1px solid #e4e7ef;padding:16px;border-radius:12px;margin:12px 0}
+.option{display:flex;align-items:center;gap:9px;margin:9px 0}
+.option input{width:auto;margin:0}
+.answer{display:block;padding:13px;border:1px solid #ddd;border-radius:10px;margin:9px 0;cursor:pointer}
+.answer:has(input:checked){background:#eeeeff;border-color:#5959df}
+.small{color:#788196;font-size:13px}
+hr{border:0;border-top:1px solid #eee;margin:22px 0}
+</style>
+</head>
+<body>
+<header><div class="logo">✓ TestLab <span class="small">| MI PLATAFORMA DE EXÁMENES</span></div></header>
+<main>
+<section id="home">
+<h1>Mis exámenes</h1>
+<p class="sub">Crea, organiza y practica tus propios test.</p>
+<div class="card">
+<button class="primary" onclick="nuevo()">＋ Crear examen</button>
+<button class="secondary" onclick="document.getElementById('importFile').click()">Importar archivo JSON</button>
+<input id="importFile" type="file" accept=".json" hidden onchange="importarArchivo(event)">
+<button class="secondary" onclick="exportar()">Exportar mis exámenes</button>
+</div>
+<div class="card">
+<h3>Mi biblioteca</h3>
+<div id="lista"></div>
+</div>
+</section>
+
+<section id="editor" class="hidden">
+<button class="secondary" onclick="inicio()">← Volver</button>
+<div class="card">
+<h2 id="tituloEditor">Crear examen</h2>
+<label>Nombre del examen</label>
+<input id="nombre" placeholder="Ej. Historia - Tema 1">
+<hr>
+<h3>Importar preguntas en bloque</h3>
+<p class="small">Puedes pegar preguntas copiadas de Word o PDF. Utiliza el formato del ejemplo.</p>
+<textarea id="bloque" placeholder="Pregunta: ¿Cuál es la capital de España?&#10;A) Barcelona&#10;B) Madrid&#10;C) Sevilla&#10;D) Valencia&#10;Correcta: B"></textarea>
+<button class="secondary" onclick="importarTexto()">＋ Importar preguntas</button>
+<hr>
+<div style="display:flex;justify-content:space-between;align-items:center">
+<h3>Preguntas</h3>
+<button class="secondary" onclick="agregarPregunta()">＋ Añadir pregunta</button>
+</div>
+<div id="preguntas"></div>
+<button class="primary" onclick="guardar()">Guardar examen</button>
+</div>
+</section>
+
+<section id="test" class="hidden">
+<button class="secondary" onclick="salir()">← Salir</button>
+<div class="card">
+<p class="small" id="testNombre"></p>
+<h3 id="contador"></h3>
+<div id="enunciado"></div>
+<div id="respuestas"></div>
+<button class="secondary" id="anterior" onclick="mover(-1)">Anterior</button>
+<button class="primary" id="siguiente" onclick="mover(1)">Siguiente</button>
+</div>
+</section>
+
+<section id="resultado" class="hidden">
+<div class="card">
+<h1>Resultados</h1>
+<h2 id="nota" style="color:#5959df;font-size:45px"></h2>
+<p id="resumen"></p>
+<div id="revision"></div>
+<button class="primary" onclick="inicio()">Volver a mis exámenes</button>
+<button class="secondary" onclick="repetir()">Repetir examen</button>
+</div>
+</section>
+</main>
+<script>
+const KEY="testlab_v2";
+let examenes=JSON.parse(localStorage.getItem(KEY)||"[]");
+let borrador=[],editando=null,examen=null,preguntasTest=[],respuestas={},pos=0;
+
+function guardarDatos(){localStorage.setItem(KEY,JSON.stringify(examenes))}
+function pantalla(id){
+ ["home","editor","test","resultado"].forEach(x=>document.getElementById(x).classList.add("hidden"));
+ document.getElementById(id).classList.remove("hidden");
+ window.scrollTo(0,0);
+}
+function inicio(){mostrarLista();pantalla("home")}
+function escapar(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function mostrarLista(){
+ let lista=document.getElementById("lista");
+ if(!examenes.length){lista.innerHTML="<p class='sub'>Todavía no tienes exámenes. ¡Crea el primero!</p>";return}
+ lista.innerHTML=examenes.map(e=>`
+ <div class="exam">
+ <h3>${escapar(e.nombre)}</h3>
+ <p class="small">${e.preguntas.length} preguntas</p>
+ <button class="primary" onclick="empezar('${e.id}')">Hacer examen</button>
+ <button class="secondary" onclick="editar('${e.id}')">Editar</button>
+ <button class="danger" onclick="eliminar('${e.id}')">Eliminar</button>
+ </div>`).join("");
+}
+function nuevo(){
+ editando=null;borrador=[];
+ document.getElementById("nombre").value="";
+ document.getElementById("tituloEditor").textContent="Crear examen";
+ agregarPregunta();pantalla("editor");
+}
+function editar(id){
+ let e=examenes.find(x=>x.id===id);
+ editando=id;borrador=JSON.parse(JSON.stringify(e.preguntas));
+ document.getElementById("nombre").value=e.nombre;
+ document.getElementById("tituloEditor").textContent="Editar examen";
+ pintarPreguntas();pantalla("editor");
+}
+function agregarPregunta(){
+ borrador.push({texto:"",opciones:["","","",""],correcta:0});
+ pintarPreguntas();
+}
+function pintarPreguntas(){
+ document.getElementById("preguntas").innerHTML=borrador.map((p,i)=>`
+ <div class="exam">
+ <div style="display:flex;justify-content:space-between">
+ <b>Pregunta ${i+1}</b>
+ <button class="danger" onclick="quitarPregunta(${i})">Eliminar</button>
+ </div>
+ <textarea placeholder="Escribe el enunciado..." oninput="borrador[${i}].texto=this.value">${escapar(p.texto)}</textarea>
+ <p class="small">Marca el círculo de la respuesta correcta.</p>
+ ${p.opciones.map((o,j)=>`
+ <div class="option">
+ <input type="radio" name="correcta${i}" ${p.correcta===j?"checked":""} onchange="borrador[${i}].correcta=${j}">
+ <input placeholder="Respuesta ${j+1}" value="${escapar(o)}" oninput="borrador[${i}].opciones[${j}]=this.value">
+ <button class="danger" onclick="quitarOpcion(${i},${j})">×</button>
+ </div>`).join("")}
+ <button class="secondary" onclick="agregarOpcion(${i})">＋ Añadir respuesta</button>
+ </div>`).join("");
+}
+function quitarPregunta(i){
+ if(confirm("¿Eliminar esta pregunta?")){borrador.splice(i,1);pintarPreguntas()}
+}
+function agregarOpcion(i){
+ if(borrador[i].opciones.length>=10){alert("Máximo 10 respuestas.");return}
+ borrador[i].opciones.push("");pintarPreguntas();
+}
+function quitarOpcion(i,j){
+ if(borrador[i].opciones.length<=2){alert("Necesitas al menos dos respuestas.");return}
+ borrador[i].opciones.splice(j,1);
+ if(borrador[i].correcta===j)borrador[i].correcta=0;
+ else if(borrador[i].correcta>j)borrador[i].correcta--;
+ pintarPreguntas();
+}
+function guardar(){
+ let nombre=document.getElementById("nombre").value.trim();
+ if(!nombre){alert("Escribe el nombre del examen.");return}
+ if(!borrador.length){alert("Añade alguna pregunta.");return}
+ for(let i=0;i<borrador.length;i++){
+ let p=borrador[i];
+ if(!p.texto.trim()||p.opciones.length<2||p.opciones.some(x=>!x.trim())){
+ alert("Revisa la pregunta "+(i+1)+".");return;
+ }
+ }
+ if(editando){
+ let e=examenes.find(x=>x.id===editando);
+ e.nombre=nombre;e.preguntas=borrador;
+ }else{
+ examenes.push({id:Date.now().toString(),nombre,preguntas:borrador});
+ }
+ guardarDatos();inicio();
+}
+function importarTexto(){
+ let texto=document.getElementById("bloque").value.trim();
+ if(!texto){alert("Pega primero las preguntas.");return}
+ let bloques=texto.replace(/\r/g,"").split(/\n\s*\n+/);
+ let nuevas=[];
+ bloques.forEach(b=>{
+ let lineas=b.split("\n").map(x=>x.trim()).filter(Boolean);
+ let pregunta="",opciones=[],correcta=null;
+ lineas.forEach(l=>{
+ let m=l.match(/^Pregunta\s*[:.)-]\s*(.*)$/i);
+ if(m){pregunta=m[1];return}
+ m=l.match(/^([A-J])\s*[).:\-]\s*(.+)$/i);
+ if(m){opciones.push({letra:m[1].toUpperCase(),texto:m[2]});return}
+ m=l.match(/^(?:Correcta|Respuesta correcta|Solución)\s*[:=]\s*([A-J])\b/i);
+ if(m){correcta=m[1].toUpperCase();return}
+ if(!pregunta&&!opciones.length)pregunta=l.replace(/^\d+[.)]\s*/,"");
+ });
+ if(pregunta&&opciones.length>=2&&correcta&&opciones.some(o=>o.letra===correcta)){
+ nuevas.push({texto:pregunta,opciones:opciones.map(o=>o.texto),correcta:opciones.findIndex(o=>o.letra===correcta)});
+ }
+ });
+ if(!nuevas.length){alert("No se reconocieron preguntas. Comprueba el formato y que indicaste 'Correcta: B'.");return}
+ borrador.push(...nuevas);pintarPreguntas();
+ document.getElementById("bloque").value="";
+ alert("Se han importado "+nuevas.length+" preguntas. Revísalas antes de guardar.");
+}
+function eliminar(id){
+ if(confirm("¿Eliminar este examen?")){examenes=examenes.filter(e=>e.id!==id);guardarDatos();mostrarLista()}
+}
+function empezar(id){
+ examen=examenes.find(e=>e.id===id);
+ preguntasTest=JSON.parse(JSON.stringify(examen.preguntas));
+ respuestas={};pos=0;
+ document.getElementById("testNombre").textContent=examen.nombre;
+ pintarTest();pantalla("test");
+}
+function pintarTest(){
+ let p=preguntasTest[pos];
+ document.getElementById("contador").textContent="Pregunta "+(pos+1)+" de "+preguntasTest.length;
+ document.getElementById("enunciado").innerHTML="<h3>"+escapar(p.texto)+"</h3>";
+ document.getElementById("respuestas").innerHTML=p.opciones.map((o,j)=>`
+ <label class="answer">
+ <input type="radio" name="respuesta" ${respuestas[pos]===j?"checked":""} onchange="respuestas[pos]=${j}">
+ ${escapar(o)}
+ </label>`).join("");
+ document.getElementById("anterior").disabled=pos===0;
+ document.getElementById("siguiente").textContent=pos===preguntasTest.length-1?"Terminar examen":"Siguiente →";
+}
+function mover(d){
+ if(pos===preguntasTest.length-1){terminar();return}
+ pos=Math.max(0,Math.min(preguntasTest.length-1,pos+d));pintarTest();
+}
+function salir(){if(confirm("¿Salir del examen? Perderás las respuestas de este intento."))inicio()}
+function terminar(){
+ let aciertos=preguntasTest.filter((p,i)=>respuestas[i]===p.correcta).length;
+ let nota=Math.round(aciertos/preguntasTest.length*100);
+ document.getElementById("nota").textContent=nota+"/100";
+ document.getElementById("resumen").textContent=aciertos+" aciertos de "+preguntasTest.length+" preguntas.";
+ document.getElementById("revision").innerHTML=preguntasTest.map((p,i)=>`
+ <div class="exam"><b>${i+1}. ${escapar(p.texto)}</b>
+ <p style="color:${respuestas[i]===p.correcta?'#16865b':'#c34c5b'}">${respuestas[i]===p.correcta?"✓ Correcta":"✗ Incorrecta o sin responder"}</p>
+ <p class="small">Tu respuesta: ${respuestas[i]===undefined?"Sin responder":escapar(p.opciones[respuestas[i]])}</p>
+ <p class="small">Respuesta correcta: ${escapar(p.opciones[p.correcta])}</p></div>`).join("");
+ pantalla("resultado");
+}
+function repetir(){empezar(examen.id)}
+function exportar(){
+ let blob=new Blob([JSON.stringify(examenes,null,2)],{type:"application/json"});
+ let a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="mis-examenes.json";a.click();URL.revokeObjectURL(a.href);
+}
+function importarArchivo(event){
+ let f=event.target.files[0];if(!f)return;
+ let r=new FileReader();
+ r.onload=()=>{try{let datos=JSON.parse(r.result);if(!Array.isArray(datos))throw 0;examenes.push(...datos);guardarDatos();mostrarLista();alert("Exámenes importados.");}catch(e){alert("El archivo no tiene un formato válido.");}};
+ r.readAsText(f);event.target.value="";
+}
+mostrarLista();
+</script>
+</body>
+</html>
